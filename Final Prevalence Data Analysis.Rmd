@@ -1,0 +1,360 @@
+---
+title: "Prevalence Analysis"
+author: "Akacia Halliday-Isaac"
+date: "April 9, 2020"
+output:
+  html_document: default
+  word_document: default
+---
+
+Read in data
+```{r}
+population <- read.csv("population.csv",header=TRUE)
+habitat <- read.csv("habitatcomp.csv", header = TRUE)
+```
+
+
+Install Packages
+```{r}
+library(ggplot2)
+library(coin)
+library(pwr)
+library(plyr)
+library(dplyr)
+library(survival)
+library(lme4)
+library(Matrix)
+library(plotly)
+library(multcompView)
+library(visreg)
+library(jtools)
+library(webshot)
+library(agricolae)
+library(knitr)
+library('dplyr')      # for data manipulation
+library('tidyr')      # for reshaping data
+
+library('ggplot2')    # plotting data
+library('scales')     # for scale_y_continuous(label = percent)
+library('ggthemes')   # for scale_fill_few('medium')
+
+library('ztable')     # format tables for reporting
+```
+
+
+Stacked bar graph of sites
+```{r}
+p <- plot_ly(data=population, x = ~Site, y = ~Infected, type = 'bar', textposition = 'outside', name = 'Infected') %>%
+    add_trace(y = ~Uninfected, name = 'Uninfected') %>%
+    layout(barmode = 'stack', xaxis = list(tickangle = 45, title = "Site", titlefont=list(size=15)),
+ yaxis = list(title = " # of S. adustus", titlefont=list(size=15), range = c(0, 20))) 
+p
+```
+
+
+
+ Determine if there is a difference in infection prevalence between sites
+```{r}
+site <- read.csv("siteanalysis.csv", header = T)
+site
+```
+ 
+```{r}
+dm <-data.matrix(population[4:5])
+dimnames(dm) <- population[1]
+```
+
+
+```{r}
+fisher.test(dm, simulate.p.value = TRUE)
+```
+
+```{r}
+library(rcompanion)
+
+PT = pairwiseNominalIndependence(dm,
+
+                                 fisher = TRUE,
+
+                                 gtest  = FALSE,
+
+                                 chisq  = FALSE,
+                                 digits = 3)
+
+PT
+```
+
+```{r}
+library(rcompanion)
+
+letters <- cldList(comparison = PT$Comparison,
+        p.value    = PT$p.adj.Fisher,
+        threshold  = 0.05)
+
+letters
+```
+
+```{r}
+plot_ly(data=population, x = ~Site, y = ~Infected, type = 'bar',  text = ~letters$Letter, textposition = 'outside', name = 'Infected') %>%
+    add_trace(y = ~Uninfected, name = 'Uninfected') %>%
+    layout(barmode = 'stack', xaxis = list(tickangle = 45, title = "Site", titlefont=list(size=15)),
+ yaxis = list(title = " Number of S. adustus Sampled", titlefont=list(size=15),  range = c(0, 30))) 
+
+```
+
+
+
+
+
+Determine if there is a difference in fish populations between sites
+ 
+```{r}
+dm2 <-data.matrix(population[11:12])
+dimnames(dm2) <- population[1]
+```
+
+
+```{r}
+fisher.test(dm2, simulate.p.value = TRUE)
+```
+
+Calculating Habitat complexity using Shannon-Weiner Diversity Index
+```{r}
+library(vegan)
+diversity(habitat[-1], index="shannon")
+```
+
+Attaching Habitat Complexity to datasheet
+```{r}
+
+ population$HabitatComplexity <- diversity(habitat[-1], index="shannon") 
+ population$HabitatComplexity
+```
+
+
+
+Mixed model
+```{r}
+library(lmerTest)
+m0 <- lmer(Prevalence ~ Population.Density+Stegastes.Population.Density+HabitatComplexity+Average.Zonal.Velocity+Average.Meridional.Velocity+NEAR_DIST + Population.Density:Stegastes.Population.Density +  + Population.Density:Average.Zonal.Velocity + Population.Density:Average.Meridional.Velocity + Population.Density:NEAR_DIST + Average.Meridional.Velocity:Average.Zonal.Velocity + Population.Density:NEAR_DIST + (1|Season), data=population)
+```
+
+```{r}
+anova(m0)
+```
+
+```{r}
+summary(m0)
+```
+
+Multiple Regression
+
+Create a subset that removes NA's
+```{r}
+subset <- subset(population, Population.Density!='NA' & Stegastes.Population.Density!='NA' & HabitatComplexity !='NA' & Average.Zonal.Velocity!='NA' & Average.Meridional.Velocity!='NA' & NEAR_DIST!='NA')
+View(subset) # do this to check that it looks OK, then close it
+dim(subset)
+```
+
+Fit model that only includes main effects
+```{r}
+fit1 <- lm(Prevalence ~ Population.Density+Stegastes.Population.Density+HabitatComplexity+Average.Zonal.Velocity+Average.Meridional.Velocity+NEAR_DIST, data=subset, na.action = "na.fail")
+library(car)
+vif(fit1) # get VIF for each predictor
+mean(vif(fit1))
+```
+
+Fit model that includes desired interactions
+```{r}
+fit2 <- lm(Prevalence ~ Population.Density+Stegastes.Population.Density+HabitatComplexity+Average.Zonal.Velocity+Average.Meridional.Velocity+NEAR_DIST+Average.Zonal.Velocity:Average.Meridional.Velocity+Average.Meridional.Velocity:NEAR_DIST+Population.Density:Stegastes.Population.Density + Population.Density:HabitatComplexity,  data=subset, na.action = "na.fail")
+# check assumptions and transform variables if necessary
+hist(fit2$residuals)
+plot(fit2$residuals ~ fit2$fitted.values)
+```
+
+Transform Data & Recheck Assumptions
+```{r}
+subset$sqrt_Prevalence <- sqrt(subset$Prevalence)
+fit3 <- lm(sqrt_Prevalence ~ Population.Density+Stegastes.Population.Density+HabitatComplexity+Average.Zonal.Velocity+Average.Meridional.Velocity+NEAR_DIST+Average.Zonal.Velocity:Average.Meridional.Velocity+Average.Meridional.Velocity:NEAR_DIST+Population.Density:Stegastes.Population.Density+Population.Density:HabitatComplexity, data=subset, na.action = "na.fail")
+# check assumptions and transform variables if necessary
+hist(fit3$residuals)
+plot(fit3$residuals ~ fit3$fitted.values)
+```
+
+```{r}
+summary.lm(fit3)
+```
+
+```{r}
+library(MuMIn)
+dd <- dredge(fit3)
+```
+
+Show table of all models within 10 AICc units of the best model:
+```{r}
+AICc <- subset(dd, delta < 10)
+write.csv(AICc, "aic.csv")
+```
+
+since several models are within 2 AICc units of the best model, use model averaging, and
+calculate relative variable importance (RVI) for each predictor:
+```{r}
+importance(dd)
+```
+
+Fit best model
+```{r}
+fit4 <- lm(sqrt_Prevalence ~ Population.Density+Average.Meridional.Velocity+NEAR_DIST, data=subset, na.action = "na.fail")
+Anova(fit4, type='II')
+```
+
+```{r}
+summary.lm(fit4)
+```
+
+Illustrate effect of Average.Meridional.Velocity on prevalence
+```{r}
+g2 <- ggplot(subset,aes(y=sqrt_Prevalence,x=Average.Meridional.Velocity))+geom_point()+ geom_smooth(method = lm)+ labs(x = "Avg. Meridional Velocity (sverdrup)", y = "Prevelence (proportion infected per pop.)")
+
+g2 + annotate(geom="text", x=0.03, y=1, label="p= 0.00318")+ theme(panel.background = element_blank())
+
+ggsave("amv v prev.png")
+```
+
+Illustrate effects of Population Density on Prevalence
+```{r}
+library(ggplot2)
+g <- ggplot(subset,aes(y=sqrt_Prevalence,x=Population.Density))+geom_point()+ geom_smooth(method = lm)+ labs(x = expression(paste(italic("S. adustus "), "Population Density (# of individuals)")), y = "Prevelence (proportion infected per pop.)")
+g + annotate(geom="text", x=8, y=0.9, label="p= 0.04771")+ theme(panel.background = element_blank())
+
+ggsave("pop den v prev.png")
+```
+
+
+Multivariate analysis of habitat variables
+```{r}
+library(vegan)
+```
+
+Read in data
+```{r}
+env <- read.csv("habitatcomp2.csv", header = TRUE)
+```
+
+Bray-Curtis distances between samples
+```{r}
+dis <- vegdist(env)
+dis
+```
+
+Calculate multivariate dispersions
+```{r}
+mod <- betadisper(dis, group = habitat$Site)
+mod
+```
+
+Load factoextra for visualization
+```{r}
+library(factoextra)
+```
+
+Compute PCA
+```{r}
+res.pca <- prcomp(env, scale = TRUE)
+```
+
+Visualize eigenvalues (scree plot). Show the percentage of variances explained by each principal component.
+```{r}
+fviz_eig(res.pca)
+```
+
+
+Graph of individuals. Individuals with a similar profile are grouped together.
+```{r}
+fviz_pca_ind(res.pca,
+             col.ind = "cos2", # Color by the quality of representation
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE     # Avoid text overlapping
+             )
+```
+
+
+
+
+Graph of variables. Positive correlated variables point to the same side of the plot. Negative correlated variables point to opposite sides of the graph.
+
+```{r}
+fviz_pca_var(res.pca,
+             col.var = "contrib", # Color by contributions to the PC
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE     # Avoid text overlapping
+             )
+```
+
+Biplot of individuals and variables
+```{r}
+fviz_pca_biplot(res.pca, repel = TRUE,
+                col.var = "#2E9FDF", # Variables color
+                col.ind = "#696969"  # Individuals color
+                )
+```
+
+Results
+```{r}
+library(factoextra)
+# Eigenvalues
+eig.val <- get_eigenvalue(res.pca)
+eig.val
+  
+# Results for Variables
+res.var <- get_pca_var(res.pca)
+res.var$coord          # Coordinates
+res.var$contrib        # Contributions to the PCs
+res.var$cos2           # Quality of representation 
+# Results for individuals
+res.ind <- get_pca_ind(res.pca)
+res.ind$coord          # Coordinates
+res.ind$contrib        # Contributions to the PCs
+res.ind$cos2           # Quality of representation
+```
+
+
+```{r}
+groups <- population$Infection.Level
+fviz_pca_ind(res.pca,
+             col.ind = groups, # color by groups
+             palette = c("#00AFBB",  "#FC4E07", "#71D1CC"),
+             addEllipses = TRUE, # Concentration ellipses
+             ellipse.type = "confidence",
+             legend.title = "Infection Level",
+             repel = TRUE
+             )
+dev.copy(png,file='PCA2.png', width = 5, 
+         height = 5, units = 'in', res = 800)
+#if this fails, then lower the resolution (res) 
+dev.off() # necessary step
+```
+
+Look at relationship between Population Density and Distance of Populations from Watersheds
+```{r}
+cor.test(population$Population.Density, population$NEAR_DIST, method = "pearson")
+```
+
+```{r}
+cor.test(population$Stegastes.Population.Density, population$NEAR_DIST, method =
+            "pearson")
+```
+
+
+Stepwise Regression of habitat composition components and prevalence
+```{r}
+lmMod <- lm(Prevalence ~ X..Rock + X.Seagrass + X.Sandy.Bottom + X..Coral + X..Sponge + X..Rubble , data = population)
+selectedMod <- step(lmMod)
+summary(selectedMod)
+```
+
+```{r}
+h <- lm(Prevalence ~ X.Sandy.Bottom, data = population)
+summary.lm(h)
+```
+

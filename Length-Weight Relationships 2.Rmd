@@ -1,0 +1,400 @@
+---
+title: "Length-Weight Relationships"
+author: "Akacia Halliday"
+date: "January 14, 2018"
+output:
+  word_document: default
+  html_document: default
+---
+
+
+Install Packages
+```{r}
+library(FSA)
+library(dplyr)
+library(knitr)
+```
+
+Read in Data
+```{r}
+relationship <- read.csv("lengthweight3.csv",header=TRUE)
+```
+
+View data
+```{r}
+str(relationship)
+```
+Create summary table of data
+```{r}
+t <- relationship %>%
+    group_by(Health) %>%
+summarize(count = n(),
+              MeanWeight = mean(Mass), MeanLength = mean(Length),
+              StDevWeight = sd(Mass), StDevLength = sd(Length))
+t
+```
+
+
+```{r kable, results = 'asis'}
+kable(head(t), digits = 2)
+
+```
+
+Create a subset containing just the length and weight variables
+```{r}
+lengthweight <- Subset(relationship,!is.na(Mass) & !is.na(Length))
+```
+
+Create Log(Length) and Log(Weight) variable
+```{r}
+lengthweight$logL <- log(lengthweight$Length)
+lengthweight$logW <- log(lengthweight$Mass)
+```
+
+View changes
+```{r}
+str(lengthweight)
+
+```
+
+Fit transformed model with Linear Model 
+```{r}
+lm1 <- lm(logW~logL,data=lengthweight)
+```
+
+View data and model fit
+```{r}
+fitPlot(lm1,xlab="log Total Length (mm)",ylab="log Weight (g)",main="Linear Model of S. adustus")
+```
+
+Summary of model fit
+```{r}
+summary(lm1)
+```
+
+A test of whether the fish in a population exhibit isometric growth or not can be obtained by noting that
+b is the estimated slope from fitting the transformed length-weight model. The slope is generically labeled
+with ?? such that the test for allometry can be translated into the following statistical hypotheses:
+? H0 : B = 3  H0 : "Isometric growth"
+? HA : B not = 3 HA : "Allometric growth"
+
+
+Determine whether damselfish are exhibiting allometric growth
+```{r}
+hoCoef(lm1,2,3)
+
+confint(lm1)
+```
+
+Correct back transformation bias
+```{r}
+syx <- summary(lm1)$sigma
+( cf <- exp((syx^2)/2) ) # this is the bias correction factor
+```
+
+Predict mean log weight
+```{r}
+( pred.log <- predict(lm1,data.frame(logL=log(100)),interval="c") )
+```
+
+Use predicted mean log weight to form a biased predicted mean weight
+```{r}
+( bias.pred.orig <- exp(pred.log) ) # biased prediction on original scale
+```
+
+Compute bias-corrected back-transformed mean weight
+```{r}
+( pred.orig <- cf*bias.pred.orig ) # corrected prediction on original scale
+```
+
+Compare Length-Weight Relationships between groups via model
+```{r}
+lengthweight$Health <- as.factor(lengthweight$Health)
+lm2 <- lm(logW~logL*Health,data=lengthweight)
+summary(lm2)
+```
+
+Analyze model using ANOVA
+```{r}
+anova(lm2)
+
+```
+
+Plot comparison model
+```{r}
+colors <- c("#56B4E9", "#E69F00")
+
+fitPlot(lm2,xlab="Fork Length (mm)",ylab="Mass (g)",legend="topleft", col=c('red', 'green', 'blue'))
+
+dev.copy(png,file='LM v health.png', width = 6, 
+         height = 6, units = 'in', res = 800)
+#if this fails, then lower the resolution (res) 
+dev.off()
+
+```
+
+```{r}
+fitPlot(lm2,xlab="Fork Length (mm)",ylab="Mass (g)",legend="topleft",main="S. adustus Length-Mass Relationship by Health Status")
+
+dev.copy(png,file='LM v health2.png', width = 6, 
+         height = 6, units = 'in', res = 800)
+#if this fails, then lower the resolution (res) 
+dev.off()
+```
+
+Infection Quantification analysis
+```{r}
+q <- read.csv("Infection Quantification.csv",header=TRUE)
+names(q)
+```
+
+Create a subset containing just the length and weight variables
+```{r}
+quant <- subset(q,!is.na(Weight..g.) & !is.na(TL..mm.))
+```
+
+Create Log(Length) and Log(Weight) variable
+```{r}
+quant$logL <- log(quant$TL..mm.)
+quant$logW <- log(quant$Weight..g.)
+```
+
+Check for outliers in dataset 
+```{r}
+library(EnvStats)
+test <- rosnerTest(quant$Infected.cell.per.RBC.load,
+  k = 5
+)
+test
+```
+
+Remove the 2 identified outlier
+```{r}
+test <- quant[-c(54),] 
+quant <- quant[-c(70),]
+```
+
+Compare Length-Weight Relationships by Infection level
+```{r}
+lm3 <- lm(logW~logL*Infected.cell.per.RBC.load,data=quant)
+summary(lm3)
+```
+
+Analyze model using ANOVA
+```{r}
+anova(lm3)
+
+```
+
+
+3D scatterplot for Length by Mass by Infection Level 
+```{r}
+library(scatterplot3d)
+scatterplot3d(quant$logL, quant$logW, quant$Infected.cell.per.RBC.load, pch = 16, grid = TRUE, box = FALSE, xlab = "Fork Length (mm)", ylab = "Mass (g)", zlab = "Infection Level")
+
+dev.copy(png,file='LM v Infection lvl.png', width = 6, 
+         height = 6, units = 'in', res = 800)
+#if this fails, then lower the resolution (res) 
+dev.off()
+```
+
+Compare Length-Weight Relationships by WBC Number
+```{r}
+lm4 <- lm(logW~logL*X..WBCS,data=quant)
+summary(lm4)
+```
+
+Analyze model using ANOVA
+```{r}
+anova(lm4)
+
+```
+
+
+```{r}
+library(scatterplot3d)
+scatterplot3d(quant$logL, quant$logW, quant$X..WBCS, pch = 16, grid = TRUE, box = FALSE, xlab = "Fork Length (mm)", ylab = "Mass (g)", zlab = "Number of White Blood Cells")
+
+dev.copy(png,file='LM v wbcs.png', width = 6, 
+         height = 6, units = 'in', res = 800)
+#if this fails, then lower the resolution (res) 
+dev.off()
+```
+
+```{r}
+library("ggpubr")
+ggscatter(quant, x = "Infected.cell.per.RBC.load", y = "logL", 
+          add = "reg.line", conf.int = TRUE, 
+          cor.coef = TRUE, cor.method = "pearson", repel = TRUE, cor.coef.coord = c(0,4.65), 
+          xlab = "Infection Level", ylab = "Fork Length (mm)")
+
+dev.copy(png,file='Infection Level v Length.png', width = 6, 
+         height = 6, units = 'in', res = 800)
+#if this fails, then lower the resolution (res) 
+dev.off()
+
+
+```
+
+```{r}
+library("ggpubr")
+ggscatter(quant, x = "Infected.cell.per.RBC.load", y = "logW", 
+          add = "reg.line", conf.int = TRUE, 
+          cor.coef = TRUE, cor.method = "pearson", repel = TRUE, cor.coef.coord = c(0,3),
+          xlab = "Infection Level", ylab = "Mass (mg)")
+
+dev.copy(png,file='Infection Level v Mass.png', width = 6, 
+         height = 6, units = 'in', res = 800)
+#if this fails, then lower the resolution (res) 
+dev.off()
+```
+
+
+
+Does the Number of White Blood Cells present correlate to infection intensity
+```{r}
+cor.test(quant$X..WBCS, quant$Infected.cell.per.RBC.load, method =
+            "pearson")
+
+```
+
+
+
+```{r}
+library("ggpubr")
+ggscatter(quant, x = "Infected.cell.per.RBC.load", y = "X..WBCS", 
+          add = "reg.line", conf.int = TRUE, 
+          cor.coef = TRUE, cor.method = "pearson", repel = TRUE, cor.coef.coord = c(0,375),
+          xlab = "Infection Level", ylab = "Number of White Blood Cells Present")
+
+dev.copy(png,file='Infection Level v wbcs.png', width = 6, 
+         height = 6, units = 'in', res = 800)
+#if this fails, then lower the resolution (res) 
+dev.off()
+```
+
+Fit log model to White Blood Cells present vs infection intensity
+```{r}
+lm_log.model = lm(log1p(X..WBCS) ~ log1p(Infected.cell.per.RBC.load), data = quant)
+
+```
+Results of the model
+```{r}
+summary(lm_log.model)
+```
+```{r}
+quant$logwbcs <- log1p(quant$X..WBCS)
+```
+
+```{r}
+quant$logicprbc <- log1p(quant$Infected.cell.per.RBC.load)
+```
+
+```{r}
+library(ggplot2)
+
+ggplot(quant, aes(x = logwbcs, y = logicprbc)) + 
+  geom_point() +
+  stat_smooth(method = "lm", col = "red") +
+  xlab("Number of White Blood Cells") + ylab("Infection Level")
+```
+
+
+```{r}
+plot(X..WBCS~Infected.cell.per.RBC.load, data=quant)
+```
+
+```{r}
+quant$X..WBCS <- as.numeric(gsub("\\.", "", quant$X..WBCS))
+quant$Infected.cell.per.RBC.load <- as.numeric(gsub("\\.", "", quant$Infected.cell.per.RBC.load))
+```
+
+
+
+Look at uninfected data
+```{r}
+q2 <- read.csv("uninfected fish.csv",header=TRUE)
+names(q2)
+```
+
+```{r}
+plot(X..WBCS~X..Uninfected.Cells, data=q2)
+```
+
+Does the Number of White Blood Cells present correlate to cell count
+```{r}
+cor.test(q2$X..WBCS, q2$X..Uninfected.Cells, method =
+            "pearson")
+
+```
+
+
+Fit log model to White Blood Cells present vs uninfected cell count
+```{r}
+lm_log.model2 = lm(log1p(X..WBCS) ~ log1p(X..Uninfected.Cells), data = q2)
+
+```
+Results of the model
+```{r}
+summary(lm_log.model2)
+```
+
+```{r}
+q2$logwbcs <- log1p(q2$X..WBCS)
+```
+
+```{r}
+q2$logrbc <- log1p(q2$X..Uninfected.Cells)
+```
+
+```{r}
+library(ggplot2)
+
+ggplot(q2, aes(x = logwbcs, y = logrbc)) + 
+  geom_point() +
+  stat_smooth(method = "lm", col = "red")+
+  xlab("White Blood Cell Count") + ylab("Red Blood Cell Count")
+```
+
+```{r}
+wbcs<- read.csv("wbcs.csv",header=TRUE)
+View(wbcs)
+```
+
+
+```{r}
+library(dplyr)
+group_by(wbcs, Group) %>%
+  summarise(
+    count = n(),
+    mean = mean(WBCS, na.rm = TRUE),
+    sd = sd(WBCS, na.rm = TRUE)
+  )
+```
+
+
+Compute the analysis of variance
+```{r}
+res.aov <- aov(WBCS ~ Group, data = wbcs)
+summary(res.aov)
+```
+
+Visualize Results
+```{r}
+library("ggpubr")
+my_comparisons <- list( c("Infected", "Zero Intensity"), c("Zero Intensity", "Uninfected"), c("Infected", "Uninfected") )
+ggboxplot(wbcs, x = "Group", y = "WBCS", 
+          color = "Group", palette = c("red", "blue", "green"),
+          order = c("Infected", "Zero Intensity", "Uninfected"),
+          ylab = "Leukocyte Count")+ 
+  stat_compare_means(comparisons = my_comparisons)+ # Add pairwise comparisons p-value
+  stat_compare_means(label.y = 50)     # Add global p-value
+
+dev.copy(png,file='wbcs by group.png', width = 8, 
+         height = 6, units = 'in', res = 800)
+#if this fails, then lower the resolution (res) 
+dev.off()
+```
+
+
+
